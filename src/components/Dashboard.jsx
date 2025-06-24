@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -12,6 +13,7 @@ export default function Dashboard() {
   const [sets, setSets] = useState('');
   const [weight, setWeight] = useState('');
   const [bodyWeight, setBodyWeight] = useState('');
+  const [editingWeightId, setEditingWeightId] = useState(null);
   const [editing, setEditing] = useState(null);
 
   const handleAddExercise = async (e) => {
@@ -47,13 +49,23 @@ export default function Dashboard() {
     setWeight('');
   };
 
-  const handleAddBodyWeight = async (e) => {
+  const handleAddOrUpdateBodyWeight = async (e) => {
     e.preventDefault();
     if (!bodyWeight) return;
-    await addDoc(collection(db, 'bodyWeight'), {
-      kg: Number(bodyWeight),
-      created: new Date().toISOString()
-    });
+
+    if (editingWeightId) {
+      const ref = doc(db, 'bodyWeight', editingWeightId);
+      await updateDoc(ref, {
+        kg: Number(bodyWeight),
+        created: new Date().toISOString()
+      });
+      setEditingWeightId(null);
+    } else {
+      await addDoc(collection(db, 'bodyWeight'), {
+        kg: Number(bodyWeight),
+        created: new Date().toISOString()
+      });
+    }
     setBodyWeight('');
   };
 
@@ -65,9 +77,18 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id) => {
-    const confirm = window.confirm("Are you sure you want to delete this workout?");
-    if (!confirm) return;
+    if (!window.confirm("Delete this workout?")) return;
     await deleteDoc(doc(db, 'workouts', id));
+  };
+
+  const handleEditWeight = (entry) => {
+    setBodyWeight(entry.kg);
+    setEditingWeightId(entry.id);
+  };
+
+  const handleDeleteWeight = async (id) => {
+    if (!window.confirm("Delete this weight log?")) return;
+    await deleteDoc(doc(db, 'bodyWeight', id));
   };
 
   useEffect(() => {
@@ -110,7 +131,7 @@ export default function Dashboard() {
         datasets: [{
           label: `Total for ${selectedExercise}`,
           data: Object.values(grouped),
-          backgroundColor: 'rgba(59, 130, 246, 0.6)'
+          backgroundColor: '#4b5563'
         }]
       }
     });
@@ -135,7 +156,8 @@ export default function Dashboard() {
         datasets: [{
           label: 'Body Weight (kg)',
           data: Object.values(grouped),
-          borderColor: 'orange',
+          borderColor: '#facc15',
+          backgroundColor: '#facc15',
           fill: false
         }]
       }
@@ -144,68 +166,51 @@ export default function Dashboard() {
     return () => chart.destroy();
   }, [weights]);
 
-  const currentWeek = new Date().toISOString().slice(0, 10).slice(0, 8);
-  const weeklyLogs = logs.filter(log => log.created?.startsWith(currentWeek));
-
-  const weeklyVolume = weeklyLogs.reduce((sum, log) => sum + log.sets * log.weight, 0);
-  const workoutCount = new Set(weeklyLogs.map(log => log.created.slice(0, 10))).size;
-  const topExercise = logs.reduce((acc, log) => {
-    acc[log.name] = (acc[log.name] || 0) + 1;
-    return acc;
-  }, {});
-  const mostFrequent = Object.entries(topExercise).sort((a, b) => b[1] - a[1])[0]?.[0];
-
   const getPR = (name) => {
     const records = logs.filter(l => l.name === name);
-    return Math.max(...records.map(r => r.sets * r.weight), 0);
+    return Math.max(...records.map(r => r.weight), 0);
   };
 
   return (
-    <div className="p-4 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">🏋️ AAT Gym Tracker</h1>
-
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
-        <div className="p-4 bg-blue-100 rounded">💪 Volume this week: <strong>{weeklyVolume} kg</strong></div>
-        <div className="p-4 bg-green-100 rounded">📆 Workouts this week: <strong>{workoutCount}</strong></div>
-        <div className="p-4 bg-yellow-100 rounded">🔥 Most frequent: <strong>{mostFrequent || 'N/A'}</strong></div>
-      </div>
+    <div className="p-4 max-w-5xl mx-auto bg-black text-white min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-yellow-400">🏋️ AAT Gym Tracker</h1>
 
       <form onSubmit={handleAddExercise} className="flex gap-2 mb-4">
-        <input type="text" placeholder="New Exercise" value={newExercise} onChange={e => setNewExercise(e.target.value)} className="p-2 border rounded text-black" />
-        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded">Add Exercise</button>
+        <input type="text" placeholder="New Exercise" value={newExercise} onChange={e => setNewExercise(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
+        <button type="submit" className="bg-yellow-500 text-black px-4 py-2 rounded">Add Exercise</button>
       </form>
 
       <form onSubmit={handleAddOrUpdateLog} className="grid md:grid-cols-4 gap-2 mb-6">
-        <select value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className="p-2 border rounded text-black">
+        <select value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className="p-2 border rounded bg-gray-900 text-white">
           <option value="">Select Exercise</option>
           {exercises.map((ex, i) => (
             <option key={i} value={ex}>{ex}</option>
           ))}
         </select>
-        <input type="number" placeholder="Sets" value={sets} onChange={e => setSets(e.target.value)} className="p-2 border rounded text-black" />
-        <input type="number" placeholder="Weight (kg)" value={weight} onChange={e => setWeight(e.target.value)} className="p-2 border rounded text-black" />
+        <input type="number" placeholder="Sets" value={sets} onChange={e => setSets(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
+        <input type="number" placeholder="Weight (kg)" value={weight} onChange={e => setWeight(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
         <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">{editing ? "Update" : "Add"}</button>
       </form>
 
-      <form onSubmit={handleAddBodyWeight} className="flex gap-2 mb-6">
-        <input type="number" placeholder="Body Weight (kg)" value={bodyWeight} onChange={e => setBodyWeight(e.target.value)} className="p-2 border rounded text-black" />
-        <button type="submit" className="bg-orange-500 text-white px-4 py-2 rounded">Log Weight</button>
+      <form onSubmit={handleAddOrUpdateBodyWeight} className="flex gap-2 mb-6">
+        <input type="number" placeholder="Body Weight (kg)" value={bodyWeight} onChange={e => setBodyWeight(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
+        <button type="submit" className="bg-orange-400 text-black px-4 py-2 rounded">{editingWeightId ? "Update" : "Log Weight"}</button>
       </form>
 
       {selectedExercise && (
         <>
-          <h2 className="text-xl font-semibold mb-2">📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)</h2>
+          <h2 className="text-xl font-semibold mb-2 text-yellow-300">📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)</h2>
           <canvas id="exerciseChart" height="100" className="mb-4"></canvas>
           <ul className="space-y-2 mb-6">
             {logs.filter(log => log.name === selectedExercise).map((log) => (
-              <li key={log.id} className="bg-gray-100 dark:bg-gray-800 p-3 rounded flex justify-between items-center">
+              <li key={log.id} className="bg-gray-800 p-3 rounded flex justify-between items-center">
                 <div>
-                  <strong>{log.sets} × {log.weight} kg</strong> {log.sets * log.weight === getPR(log.name) && <span className="text-red-600 ml-2">🏅 PR</span>}
-                  <div className="text-sm text-gray-500">{new Date(log.created).toLocaleString()}</div>
+                  <strong>{log.sets} × {log.weight} kg</strong> {log.weight === getPR(log.name) && <span className="text-yellow-400 ml-2">🏅 PR</span>}
+                  <div className="text-sm text-gray-400">{new Date(log.created).toLocaleString()}</div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => handleEdit(log)} className="text-blue-600 underline">Edit</button>
-                  <button onClick={() => handleDelete(log.id)} className="text-red-600 underline">Delete</button>
+                <div className="flex gap-3">
+                  <button onClick={() => handleEdit(log)} className="text-blue-400 underline">Edit</button>
+                  <button onClick={() => handleDelete(log.id)} className="text-red-400 underline">Delete</button>
                 </div>
               </li>
             ))}
@@ -215,8 +220,22 @@ export default function Dashboard() {
 
       {weights.length > 0 && (
         <>
-          <h2 className="text-xl font-semibold mb-2">📉 Body Weight Over Time</h2>
+          <h2 className="text-xl font-semibold mb-2 text-yellow-300">📉 Body Weight Over Time</h2>
           <canvas id="bodyWeightChart" height="100" className="mb-4"></canvas>
+          <ul className="space-y-2">
+            {weights.map((entry) => (
+              <li key={entry.id} className="bg-gray-800 p-3 rounded flex justify-between items-center">
+                <div>
+                  <strong>{entry.kg} kg</strong>
+                  <div className="text-sm text-gray-400">{new Date(entry.created).toLocaleString()}</div>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => handleEditWeight(entry)} className="text-blue-400 underline">Edit</button>
+                  <button onClick={() => handleDeleteWeight(entry.id)} className="text-red-400 underline">Delete</button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </>
       )}
     </div>
