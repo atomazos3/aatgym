@@ -3,27 +3,17 @@ import React, { useEffect, useState } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Chart from 'chart.js/auto';
+import dayjs from 'dayjs';
 
 export default function Dashboard() {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [weights, setWeights] = useState([]);
-  const [newExercise, setNewExercise] = useState('');
   const [selectedExercise, setSelectedExercise] = useState('');
   const [sets, setSets] = useState('');
   const [weight, setWeight] = useState('');
-  const [bodyWeight, setBodyWeight] = useState('');
-  const [editingWeightId, setEditingWeightId] = useState(null);
-  const [editing, setEditing] = useState(null);
+  const [range, setRange] = useState('weekly'); // weekly | monthly | all
 
-  const handleAddExercise = async (e) => {
-    e.preventDefault();
-    const name = newExercise.trim();
-    if (!name || exercises.includes(name)) return;
-    await addDoc(collection(db, 'exercises'), { name });
-    setNewExercise('');
-    setSelectedExercise(name);
-  };
+  const [editing, setEditing] = useState(null);
 
   const handleAddOrUpdateLog = async (e) => {
     e.preventDefault();
@@ -34,7 +24,7 @@ export default function Dashboard() {
         sets: Number(sets),
         weight: Number(weight),
         name: selectedExercise,
-        created: editing.created,
+        created: editing.created
       });
       setEditing(null);
     } else {
@@ -49,26 +39,6 @@ export default function Dashboard() {
     setWeight('');
   };
 
-  const handleAddOrUpdateBodyWeight = async (e) => {
-    e.preventDefault();
-    if (!bodyWeight) return;
-
-    if (editingWeightId) {
-      const ref = doc(db, 'bodyWeight', editingWeightId);
-      await updateDoc(ref, {
-        kg: Number(bodyWeight),
-        created: new Date().toISOString()
-      });
-      setEditingWeightId(null);
-    } else {
-      await addDoc(collection(db, 'bodyWeight'), {
-        kg: Number(bodyWeight),
-        created: new Date().toISOString()
-      });
-    }
-    setBodyWeight('');
-  };
-
   const handleEdit = (log) => {
     setEditing(log);
     setSets(log.sets);
@@ -77,18 +47,8 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this workout?")) return;
+    if (!window.confirm('Delete this workout?')) return;
     await deleteDoc(doc(db, 'workouts', id));
-  };
-
-  const handleEditWeight = (entry) => {
-    setBodyWeight(entry.kg);
-    setEditingWeightId(entry.id);
-  };
-
-  const handleDeleteWeight = async (id) => {
-    if (!window.confirm("Delete this weight log?")) return;
-    await deleteDoc(doc(db, 'bodyWeight', id));
   };
 
   useEffect(() => {
@@ -97,18 +57,13 @@ export default function Dashboard() {
       setExercises(Array.from(new Set(names)).sort());
     });
 
-    const unsub2 = onSnapshot(query(collection(db, 'workouts'), orderBy('created', 'desc')), snapshot => {
+    const unsub2 = onSnapshot(query(collection(db, 'workouts'), orderBy('created', 'asc')), snapshot => {
       setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const unsub3 = onSnapshot(query(collection(db, 'bodyWeight'), orderBy('created')), snapshot => {
-      setWeights(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
     return () => {
       unsub1();
       unsub2();
-      unsub3();
     };
   }, []);
 
@@ -116,55 +71,54 @@ export default function Dashboard() {
     const chartCanvas = document.getElementById('exerciseChart');
     if (!chartCanvas || !selectedExercise) return;
 
-    const grouped = logs
-      .filter(log => log.name === selectedExercise)
-      .reduce((acc, log) => {
-        const date = log.created?.slice(0, 10);
-        acc[date] = (acc[date] || 0) + (log.sets * log.weight);
-        return acc;
-      }, {});
+    const now = dayjs();
+    const filteredLogs = logs.filter(log => {
+      const date = dayjs(log.created);
+      if (log.name !== selectedExercise) return false;
+      if (range === 'weekly') return date.isAfter(now.subtract(7, 'day'));
+      if (range === 'monthly') return date.isAfter(now.subtract(1, 'month'));
+      return true;
+    });
+
+    const labels = filteredLogs.map(log => dayjs(log.created).format('MMM D - HH:mm'));
+    const data = filteredLogs.map(log => log.sets * log.weight);
 
     const chart = new Chart(chartCanvas, {
       type: 'bar',
       data: {
-        labels: Object.keys(grouped),
+        labels,
         datasets: [{
-          label: `Total for ${selectedExercise}`,
-          data: Object.values(grouped),
+          label: `${selectedExercise} Volume`,
+          data,
           backgroundColor: '#4b5563'
         }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            ticks: {
+              color: 'white'
+            }
+          },
+          y: {
+            ticks: {
+              color: 'white'
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: 'white'
+            }
+          }
+        }
       }
     });
 
     return () => chart.destroy();
-  }, [logs, selectedExercise]);
-
-  useEffect(() => {
-    const weightCanvas = document.getElementById('bodyWeightChart');
-    if (!weightCanvas || weights.length === 0) return;
-
-    const grouped = weights.reduce((acc, entry) => {
-      const date = entry.created?.slice(0, 10);
-      acc[date] = entry.kg;
-      return acc;
-    }, {});
-
-    const chart = new Chart(weightCanvas, {
-      type: 'line',
-      data: {
-        labels: Object.keys(grouped),
-        datasets: [{
-          label: 'Body Weight (kg)',
-          data: Object.values(grouped),
-          borderColor: '#facc15',
-          backgroundColor: '#facc15',
-          fill: false
-        }]
-      }
-    });
-
-    return () => chart.destroy();
-  }, [weights]);
+  }, [logs, selectedExercise, range]);
 
   const getPR = (name) => {
     const records = logs.filter(l => l.name === name);
@@ -174,11 +128,6 @@ export default function Dashboard() {
   return (
     <div className="p-4 max-w-5xl mx-auto bg-black text-white min-h-screen">
       <h1 className="text-3xl font-bold mb-6 text-yellow-400">🏋️ AAT Gym Tracker</h1>
-
-      <form onSubmit={handleAddExercise} className="flex gap-2 mb-4">
-        <input type="text" placeholder="New Exercise" value={newExercise} onChange={e => setNewExercise(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
-        <button type="submit" className="bg-yellow-500 text-black px-4 py-2 rounded">Add Exercise</button>
-      </form>
 
       <form onSubmit={handleAddOrUpdateLog} className="grid md:grid-cols-4 gap-2 mb-6">
         <select value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className="p-2 border rounded bg-gray-900 text-white">
@@ -192,46 +141,31 @@ export default function Dashboard() {
         <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">{editing ? "Update" : "Add"}</button>
       </form>
 
-      <form onSubmit={handleAddOrUpdateBodyWeight} className="flex gap-2 mb-6">
-        <input type="number" placeholder="Body Weight (kg)" value={bodyWeight} onChange={e => setBodyWeight(e.target.value)} className="p-2 border rounded bg-gray-900 text-white" />
-        <button type="submit" className="bg-orange-400 text-black px-4 py-2 rounded">{editingWeightId ? "Update" : "Log Weight"}</button>
-      </form>
+      <div className="flex gap-2 mb-4">
+        {['weekly', 'monthly', 'all'].map(r => (
+          <button key={r} onClick={() => setRange(r)}
+            className={`px-4 py-2 rounded ${range === r ? 'bg-yellow-400 text-black' : 'bg-gray-700 text-white'}`}>
+            {r.charAt(0).toUpperCase() + r.slice(1)}
+          </button>
+        ))}
+      </div>
 
       {selectedExercise && (
         <>
-          <h2 className="text-xl font-semibold mb-2 text-yellow-300">📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)</h2>
-          <canvas id="exerciseChart" height="100" className="mb-4"></canvas>
+          <h2 className="text-xl font-semibold mb-2 text-yellow-300">
+            📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)
+          </h2>
+          <canvas id="exerciseChart" height="100" className="mb-6"></canvas>
           <ul className="space-y-2 mb-6">
             {logs.filter(log => log.name === selectedExercise).map((log) => (
               <li key={log.id} className="bg-gray-800 p-3 rounded flex justify-between items-center">
                 <div>
-                  <strong>{log.sets} × {log.weight} kg</strong> {log.weight === getPR(log.name) && <span className="text-yellow-400 ml-2">🏅 PR</span>}
+                  <strong>{log.sets} × {log.weight} kg</strong>
                   <div className="text-sm text-gray-400">{new Date(log.created).toLocaleString()}</div>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => handleEdit(log)} className="text-blue-400 underline">Edit</button>
                   <button onClick={() => handleDelete(log.id)} className="text-red-400 underline">Delete</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {weights.length > 0 && (
-        <>
-          <h2 className="text-xl font-semibold mb-2 text-yellow-300">📉 Body Weight Over Time</h2>
-          <canvas id="bodyWeightChart" height="100" className="mb-4"></canvas>
-          <ul className="space-y-2">
-            {weights.map((entry) => (
-              <li key={entry.id} className="bg-gray-800 p-3 rounded flex justify-between items-center">
-                <div>
-                  <strong>{entry.kg} kg</strong>
-                  <div className="text-sm text-gray-400">{new Date(entry.created).toLocaleString()}</div>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => handleEditWeight(entry)} className="text-blue-400 underline">Edit</button>
-                  <button onClick={() => handleDeleteWeight(entry.id)} className="text-red-400 underline">Delete</button>
                 </div>
               </li>
             ))}
