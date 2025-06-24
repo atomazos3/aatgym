@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -127,7 +126,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 max-w-5xl mx-auto bg-black text-white min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-yellow-400">🏋️ AAT Gym Tracker</h1>
+      <h1 className="text-3xl font-bold mb-6 text-yellow-400">π‹οΈ AAT Gym Tracker</h1>
 
       <form onSubmit={handleAddOrUpdateLog} className="grid md:grid-cols-4 gap-2 mb-6">
         <select value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} className="p-2 border rounded bg-gray-900 text-white">
@@ -153,14 +152,14 @@ export default function Dashboard() {
       {selectedExercise && (
         <>
           <h2 className="text-xl font-semibold mb-2 text-yellow-300">
-            📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)
+            π“ {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)
           </h2>
           <canvas id="exerciseChart" height="100" className="mb-6"></canvas>
           <ul className="space-y-2 mb-6">
             {logs.filter(log => log.name === selectedExercise).map((log) => (
               <li key={log.id} className="bg-gray-800 p-3 rounded flex justify-between items-center">
                 <div>
-                  <strong>{log.sets} × {log.weight} kg</strong>
+                  <strong>{log.sets} Γ— {log.weight} kg</strong>
                   <div className="text-sm text-gray-400">{new Date(log.created).toLocaleString()}</div>
                 </div>
                 <div className="flex gap-3">
@@ -175,3 +174,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
