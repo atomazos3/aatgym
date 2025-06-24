@@ -6,10 +6,12 @@ import Chart from 'chart.js/auto';
 export default function Dashboard() {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [weights, setWeights] = useState([]);
   const [newExercise, setNewExercise] = useState('');
   const [selectedExercise, setSelectedExercise] = useState('');
   const [sets, setSets] = useState('');
   const [weight, setWeight] = useState('');
+  const [bodyWeight, setBodyWeight] = useState('');
   const [editing, setEditing] = useState(null);
 
   const handleAddExercise = async (e) => {
@@ -45,6 +47,16 @@ export default function Dashboard() {
     setWeight('');
   };
 
+  const handleAddBodyWeight = async (e) => {
+    e.preventDefault();
+    if (!bodyWeight) return;
+    await addDoc(collection(db, 'bodyWeight'), {
+      kg: Number(bodyWeight),
+      created: new Date().toISOString()
+    });
+    setBodyWeight('');
+  };
+
   const handleEdit = (log) => {
     setEditing(log);
     setSets(log.sets);
@@ -68,48 +80,97 @@ export default function Dashboard() {
       setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const unsub3 = onSnapshot(query(collection(db, 'bodyWeight'), orderBy('created')), snapshot => {
+      setWeights(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsub1();
       unsub2();
+      unsub3();
     };
   }, []);
 
   useEffect(() => {
-    const charts = {};
-    const grouped = logs.reduce((acc, log) => {
-      if (!acc[log.name]) acc[log.name] = {};
-      const date = log.created?.slice(0, 10);
-      acc[log.name][date] = (acc[log.name][date] || 0) + (log.sets * log.weight);
-      return acc;
-    }, {});
+    const chartCanvas = document.getElementById('exerciseChart');
+    if (!chartCanvas || !selectedExercise) return;
 
-    Object.keys(grouped).forEach(name => {
-      const ctx = document.getElementById(`chart-${name}`);
-      if (ctx) {
-        charts[name] = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: Object.keys(grouped[name]),
-            datasets: [{
-              label: `Total for ${name}`,
-              data: Object.values(grouped[name]),
-              backgroundColor: 'rgba(59, 130, 246, 0.6)'
-            }]
-          }
-        });
+    const grouped = logs
+      .filter(log => log.name === selectedExercise)
+      .reduce((acc, log) => {
+        const date = log.created?.slice(0, 10);
+        acc[date] = (acc[date] || 0) + (log.sets * log.weight);
+        return acc;
+      }, {});
+
+    const chart = new Chart(chartCanvas, {
+      type: 'bar',
+      data: {
+        labels: Object.keys(grouped),
+        datasets: [{
+          label: `Total for ${selectedExercise}`,
+          data: Object.values(grouped),
+          backgroundColor: 'rgba(59, 130, 246, 0.6)'
+        }]
       }
     });
 
-    return () => {
-      Object.values(charts).forEach(chart => chart.destroy());
-    };
-  }, [logs]);
+    return () => chart.destroy();
+  }, [logs, selectedExercise]);
+
+  useEffect(() => {
+    const weightCanvas = document.getElementById('bodyWeightChart');
+    if (!weightCanvas || weights.length === 0) return;
+
+    const grouped = weights.reduce((acc, entry) => {
+      const date = entry.created?.slice(0, 10);
+      acc[date] = entry.kg;
+      return acc;
+    }, {});
+
+    const chart = new Chart(weightCanvas, {
+      type: 'line',
+      data: {
+        labels: Object.keys(grouped),
+        datasets: [{
+          label: 'Body Weight (kg)',
+          data: Object.values(grouped),
+          borderColor: 'orange',
+          fill: false
+        }]
+      }
+    });
+
+    return () => chart.destroy();
+  }, [weights]);
+
+  const currentWeek = new Date().toISOString().slice(0, 10).slice(0, 8);
+  const weeklyLogs = logs.filter(log => log.created?.startsWith(currentWeek));
+
+  const weeklyVolume = weeklyLogs.reduce((sum, log) => sum + log.sets * log.weight, 0);
+  const workoutCount = new Set(weeklyLogs.map(log => log.created.slice(0, 10))).size;
+  const topExercise = logs.reduce((acc, log) => {
+    acc[log.name] = (acc[log.name] || 0) + 1;
+    return acc;
+  }, {});
+  const mostFrequent = Object.entries(topExercise).sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  const getPR = (name) => {
+    const records = logs.filter(l => l.name === name);
+    return Math.max(...records.map(r => r.sets * r.weight), 0);
+  };
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">🏋️ AAT Gym Tracker</h1>
 
-      <form onSubmit={handleAddExercise} className="flex gap-2 mb-6">
+      <div className="grid md:grid-cols-3 gap-4 mb-6">
+        <div className="p-4 bg-blue-100 rounded">💪 Volume this week: <strong>{weeklyVolume} kg</strong></div>
+        <div className="p-4 bg-green-100 rounded">📆 Workouts this week: <strong>{workoutCount}</strong></div>
+        <div className="p-4 bg-yellow-100 rounded">🔥 Most frequent: <strong>{mostFrequent || 'N/A'}</strong></div>
+      </div>
+
+      <form onSubmit={handleAddExercise} className="flex gap-2 mb-4">
         <input type="text" placeholder="New Exercise" value={newExercise} onChange={e => setNewExercise(e.target.value)} className="p-2 border rounded text-black" />
         <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded">Add Exercise</button>
       </form>
@@ -126,15 +187,20 @@ export default function Dashboard() {
         <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">{editing ? "Update" : "Add"}</button>
       </form>
 
-      {exercises.map((name, index) => (
-        <div key={index} className="mb-10">
-          <h2 className="text-xl font-semibold mb-2">{name}</h2>
-          <canvas id={`chart-${name}`} height="100" className="mb-4"></canvas>
-          <ul className="space-y-2">
-            {logs.filter(log => log.name === name).map((log, i) => (
+      <form onSubmit={handleAddBodyWeight} className="flex gap-2 mb-6">
+        <input type="number" placeholder="Body Weight (kg)" value={bodyWeight} onChange={e => setBodyWeight(e.target.value)} className="p-2 border rounded text-black" />
+        <button type="submit" className="bg-orange-500 text-white px-4 py-2 rounded">Log Weight</button>
+      </form>
+
+      {selectedExercise && (
+        <>
+          <h2 className="text-xl font-semibold mb-2">📈 {selectedExercise} Progress (PR: {getPR(selectedExercise)} kg)</h2>
+          <canvas id="exerciseChart" height="100" className="mb-4"></canvas>
+          <ul className="space-y-2 mb-6">
+            {logs.filter(log => log.name === selectedExercise).map((log) => (
               <li key={log.id} className="bg-gray-100 dark:bg-gray-800 p-3 rounded flex justify-between items-center">
                 <div>
-                  <strong>{log.sets} sets × {log.weight} kg</strong>
+                  <strong>{log.sets} × {log.weight} kg</strong> {log.sets * log.weight === getPR(log.name) && <span className="text-red-600 ml-2">🏅 PR</span>}
                   <div className="text-sm text-gray-500">{new Date(log.created).toLocaleString()}</div>
                 </div>
                 <div className="flex gap-2">
@@ -144,8 +210,15 @@ export default function Dashboard() {
               </li>
             ))}
           </ul>
-        </div>
-      ))}
+        </>
+      )}
+
+      {weights.length > 0 && (
+        <>
+          <h2 className="text-xl font-semibold mb-2">📉 Body Weight Over Time</h2>
+          <canvas id="bodyWeightChart" height="100" className="mb-4"></canvas>
+        </>
+      )}
     </div>
   );
 }
