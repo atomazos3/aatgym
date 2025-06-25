@@ -148,7 +148,7 @@ export default function Dashboard() {
 
       <div className="flex gap-2 mb-4">
         {['weekly', 'monthly', 'all'].map(r => (
-          <button key={r} onClick={() => setRange(r)} className={\`px-4 py-2 rounded \${range === r ? 'bg-yellow-400 text-black' : 'bg-gray-700'}\`}>
+          <button key={r} onClick={() => setRange(r)} className={`px-4 py-2 rounded ${range === r ? 'bg-yellow-400 text-black' : 'bg-gray-700'}`}>
             {r}
           </button>
         ))}
