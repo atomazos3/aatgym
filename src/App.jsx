@@ -3,8 +3,8 @@ import Dashboard from './components/Dashboard';
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+    <main className="min-h-screen bg-black text-white p-4">
       <Dashboard />
-    </div>
+    </main>
   );
 }
